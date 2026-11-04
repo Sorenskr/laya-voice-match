@@ -31,13 +31,12 @@
       -webkit-user-select: none;
     }
 
+    /* 頁面鋪滿全屏，黑色背景和通話頁融為一體，視覺上消除黑塊 */
     html, body {
-      position: fixed;
-      inset: 0;
       width: 100%;
-      height: 100vh;
-      height: 100lvh;
-      min-height: -webkit-fill-available;
+      height: 100%;
+      margin: 0;
+      padding: 0;
       background-color: #000000;
       color: #ffffff;
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang TC", "PingFang HK", "Heiti TC", "Microsoft JhengHei", sans-serif;
@@ -46,14 +45,9 @@
     }
 
     .app-container {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
+      position: relative;
       width: 100%;
-      height: 100vh;
-      height: 100lvh;
+      height: 100%;
       max-width: 480px;
       margin: 0 auto;
       display: flex;
@@ -61,7 +55,7 @@
       justify-content: space-between;
       align-items: center;
       padding-top: calc(var(--safe-top) + 8px);
-      padding-bottom: var(--custom-bottom-pad, 10px);
+      padding-bottom: 6px;
       background: #000000;
       overflow: hidden;
     }
@@ -521,13 +515,14 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
-    /* 底部計時器 + 掛斷/開視頻控制 + 底部發送文字欄 */
+    /* 底部計時器 + 掛斷/開視頻控制 + 底部發送文字欄（自動適配 iOS 底部安全區 env(safe-area-inset-bottom)） */
     .bottom-controls-area {
       width: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
       padding: 0 16px;
+      padding-bottom: var(--custom-bottom-pad, env(safe-area-inset-bottom));
       gap: 13px;
     }
 
@@ -970,11 +965,40 @@
       align-items: center;
       justify-content: space-between;
       margin-bottom: 14px;
+      gap: 8px;
     }
 
     .sheet-title {
-      font-size: 16px;
+      font-size: 15.5px;
       font-weight: 600;
+    }
+
+    .sheet-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .sheet-help-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(168, 85, 247, 0.25);
+      border: 1.2px solid rgba(192, 132, 252, 0.65);
+      color: #f3e8ff;
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.2s ease;
+    }
+
+    .sheet-help-btn:active {
+      transform: scale(0.9);
+      background: rgba(168, 85, 247, 0.45);
     }
 
     .sheet-close {
@@ -985,6 +1009,131 @@
       border-radius: 14px;
       font-size: 13px;
       cursor: pointer;
+    }
+
+    /* 使用教程全屏預覽彈窗（支持放大、縮小、點擊 ✕ 返回上一頁） */
+    .tutorial-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(10, 10, 14, 0.96);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      z-index: 130;
+      display: none;
+      flex-direction: column;
+      padding-top: var(--safe-top, 18px);
+      padding-bottom: var(--safe-bottom, 14px);
+    }
+
+    .tutorial-modal.open {
+      display: flex;
+    }
+
+    .tutorial-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(24, 24, 28, 0.9);
+      flex-shrink: 0;
+    }
+
+    .tutorial-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .tutorial-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tut-ctrl-btn {
+      height: 30px;
+      min-width: 30px;
+      padding: 0 9px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .tut-ctrl-btn:active {
+      background: rgba(255, 255, 255, 0.24);
+    }
+
+    .tut-close-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(255, 91, 99, 0.22);
+      border: 1px solid rgba(255, 91, 99, 0.5);
+      color: #ff6b72;
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      margin-left: 4px;
+    }
+
+    .tut-close-btn:active {
+      transform: scale(0.9);
+    }
+
+    .tutorial-scroll-body {
+      flex: 1;
+      width: 100%;
+      overflow: auto;
+      padding: 14px;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-x pan-y pinch-zoom;
+    }
+
+    .tutorial-zoom-inner {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      transform-origin: top left;
+      transition: width 0.18s ease;
+    }
+
+    .tutorial-step-card {
+      width: 100%;
+      background: #18181c;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .tutorial-step-badge {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #c084fc;
+      padding: 0 4px;
+    }
+
+    .tutorial-step-img {
+      width: 100%;
+      height: auto;
+      border-radius: 8px;
+      display: block;
+      cursor: zoom-in;
     }
 
     .form-group {
@@ -1286,7 +1435,10 @@
     <div class="settings-sheet">
       <div class="sheet-header">
         <span class="sheet-title">Laya 語音匹配 · 拍攝與自定義設置</span>
-        <button class="sheet-close" id="closeSettingsBtn">完成</button>
+        <div class="sheet-header-actions">
+          <button class="sheet-help-btn" id="openTutorialBtn" title="查看使用教程">?</button>
+          <button class="sheet-close" id="closeSettingsBtn">完成</button>
+        </div>
       </div>
 
       <div class="form-group">
@@ -1354,6 +1506,47 @@
 
       <div class="sheet-tip">
         提示：點「開視頻」可自由選擇「上傳手機相冊視頻」或「開啟真實前置鏡頭」，並支持小窗與全屏切換
+      </div>
+    </div>
+  </div>
+
+  <!-- 使用教程圖片預覽彈窗（支持放大、縮小、點擊 ✕ 回到上一頁） -->
+  <div class="tutorial-modal" id="tutorialModal">
+    <div class="tutorial-topbar">
+      <span class="tutorial-title">📖 使用教程（可放大縮小）</span>
+      <div class="tutorial-controls">
+        <button class="tut-ctrl-btn" id="zoomOutTutorialBtn" title="縮小">－</button>
+        <button class="tut-ctrl-btn" id="zoomResetTutorialBtn" title="還原比例">100%</button>
+        <button class="tut-ctrl-btn" id="zoomInTutorialBtn" title="放大">＋</button>
+        <button class="tut-close-btn" id="closeTutorialBtn" title="關閉並返回上一頁">✕</button>
+      </div>
+    </div>
+    <div class="tutorial-scroll-body" id="tutorialScrollBody">
+      <div class="tutorial-zoom-inner" id="tutorialZoomInner">
+        <div class="tutorial-step-card">
+          <div class="tutorial-step-badge">步驟 1 / 6</div>
+          <img src="shiyongfangfa/1.png" alt="教程步驟 1" class="tutorial-step-img" />
+        </div>
+        <div class="tutorial-step-card">
+          <div class="tutorial-step-badge">步驟 2 / 6</div>
+          <img src="shiyongfangfa/2.png" alt="教程步驟 2" class="tutorial-step-img" />
+        </div>
+        <div class="tutorial-step-card">
+          <div class="tutorial-step-badge">步驟 3 / 6</div>
+          <img src="shiyongfangfa/3.png" alt="教程步驟 3" class="tutorial-step-img" />
+        </div>
+        <div class="tutorial-step-card">
+          <div class="tutorial-step-badge">步驟 4 / 6</div>
+          <img src="shiyongfangfa/4.png" alt="教程步驟 4" class="tutorial-step-img" />
+        </div>
+        <div class="tutorial-step-card">
+          <div class="tutorial-step-badge">步驟 5 / 6</div>
+          <img src="shiyongfangfa/5.png" alt="教程步驟 5" class="tutorial-step-img" />
+        </div>
+        <div class="tutorial-step-card">
+          <div class="tutorial-step-badge">步驟 6 / 6</div>
+          <img src="shiyongfangfa/6.png" alt="教程步驟 6" class="tutorial-step-img" />
+        </div>
       </div>
     </div>
   </div>
@@ -2118,6 +2311,57 @@
       if (e.target === settingsModal) closeSettings();
     });
 
+    // 使用教程彈窗與放大縮小控制
+    const openTutorialBtn = document.getElementById('openTutorialBtn');
+    const tutorialModal = document.getElementById('tutorialModal');
+    const closeTutorialBtn = document.getElementById('closeTutorialBtn');
+    const zoomInTutorialBtn = document.getElementById('zoomInTutorialBtn');
+    const zoomOutTutorialBtn = document.getElementById('zoomOutTutorialBtn');
+    const zoomResetTutorialBtn = document.getElementById('zoomResetTutorialBtn');
+    const tutorialZoomInner = document.getElementById('tutorialZoomInner');
+    const tutorialStepImgs = Array.from(document.querySelectorAll('.tutorial-step-img'));
+    let tutorialZoomPercent = 100;
+
+    function applyTutorialZoom(percent) {
+      tutorialZoomPercent = Math.max(50, Math.min(300, percent));
+      tutorialZoomInner.style.width = tutorialZoomPercent + '%';
+      zoomResetTutorialBtn.textContent = tutorialZoomPercent + '%';
+      tutorialStepImgs.forEach(img => {
+        img.style.cursor = tutorialZoomPercent > 100 ? 'zoom-out' : 'zoom-in';
+      });
+    }
+
+    openTutorialBtn.addEventListener('click', () => {
+      applyTutorialZoom(100);
+      tutorialModal.classList.add('open');
+    });
+
+    closeTutorialBtn.addEventListener('click', () => {
+      tutorialModal.classList.remove('open');
+    });
+
+    zoomInTutorialBtn.addEventListener('click', () => {
+      applyTutorialZoom(tutorialZoomPercent + 25);
+    });
+
+    zoomOutTutorialBtn.addEventListener('click', () => {
+      applyTutorialZoom(tutorialZoomPercent - 25);
+    });
+
+    zoomResetTutorialBtn.addEventListener('click', () => {
+      applyTutorialZoom(100);
+    });
+
+    tutorialStepImgs.forEach(img => {
+      img.addEventListener('click', () => {
+        if (tutorialZoomPercent === 100) {
+          applyTutorialZoom(175);
+        } else {
+          applyTutorialZoom(100);
+        }
+      });
+    });
+
     applyTimerBtn.addEventListener('click', () => {
       const sec = parseInt(customSecondsInput.value, 10);
       elapsedSeconds = isNaN(sec) || sec < 0 ? 0 : sec;
@@ -2136,34 +2380,22 @@
     const bottomPadRange = document.getElementById('bottomPadRange');
     const bottomPadValLabel = document.getElementById('bottomPadValLabel');
 
-    // 修復 iOS「添加到主屏幕」全屏模式下 100dvh / innerHeight 底部留黑邊的 WebKit Bug
-    function fixIosStandaloneHeight() {
-      const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
-      if (isStandalone && window.screen && window.screen.height) {
-        const fullH = Math.max(window.innerHeight, window.screen.height);
-        document.documentElement.style.height = fullH + 'px';
-        document.body.style.height = fullH + 'px';
-        appContainer.style.height = fullH + 'px';
-      } else {
-        appContainer.style.height = '';
-      }
-    }
-
-    window.addEventListener('resize', fixIosStandaloneHeight);
-
     bottomPadRange.addEventListener('input', (e) => {
       const px = e.target.value;
       bottomPadValLabel.textContent = px + 'px';
       appContainer.style.setProperty('--custom-bottom-pad', px + 'px');
-      try { localStorage.setItem('laya_bottom_pad', px); } catch (err) {}
+      try { localStorage.setItem('laya_bottom_pad_custom', px); } catch (err) {}
     });
 
     function initApp() {
-      fixIosStandaloneHeight();
-      const savedPad = localStorage.getItem('laya_bottom_pad') ?? '8';
-      bottomPadRange.value = savedPad;
-      bottomPadValLabel.textContent = savedPad + 'px';
-      appContainer.style.setProperty('--custom-bottom-pad', savedPad + 'px');
+      const savedPad = localStorage.getItem('laya_bottom_pad_custom');
+      if (savedPad !== null) {
+        bottomPadRange.value = savedPad;
+        bottomPadValLabel.textContent = savedPad + 'px';
+        appContainer.style.setProperty('--custom-bottom-pad', savedPad + 'px');
+      } else {
+        bottomPadValLabel.textContent = '自動';
+      }
 
       try {
         localStorage.removeItem('laya_voice_nickname');
