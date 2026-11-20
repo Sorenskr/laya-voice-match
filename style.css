@@ -1,0 +1,1573 @@
+:root {
+  --safe-top: env(safe-area-inset-top, 18px);
+  --safe-bottom: env(safe-area-inset-bottom, 14px);
+  --laya-purple: #a855f7;
+  --laya-lavender: #c084fc;
+  --laya-pink: #ec4899;
+  --laya-glow: rgba(196, 43, 179, 0.45);
+  --custom-bottom-pad: 50px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: #000000;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang TC", "PingFang HK", "Heiti TC", "Microsoft JhengHei", sans-serif;
+  overflow: hidden;
+  touch-action: manipulation;
+}
+
+.app-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: calc(var(--safe-top) + 8px);
+  padding-bottom: 6px;
+  background: #000000;
+  overflow: hidden;
+}
+
+/* ==================== 双端视频通话舞台层 ==================== */
+.video-call-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: none;
+  pointer-events: none;
+  background: #050508;
+}
+
+.app-container.mode-video .video-call-layer {
+  display: block;
+}
+
+.video-stage {
+  position: relative;
+  overflow: hidden;
+  transition: border-radius 0.24s ease, box-shadow 0.24s ease, opacity 0.24s ease;
+}
+
+.video-stage video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transform-origin: center center;
+}
+
+#peerVideoEl {
+  transform: translate3d(var(--peer-vid-x, 0px), var(--peer-vid-y, 0px), 0) scale(var(--peer-vid-scale, 1));
+}
+
+#selfVideoEl {
+  transform: translate3d(var(--self-vid-x, 0px), var(--self-vid-y, 0px), 0) scale(var(--self-vid-scale, 1)) scaleX(var(--self-mirror-x, 1));
+}
+
+/* 主画面（全屏铺满） */
+.video-stage.is-main-stage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  border-radius: 0;
+  pointer-events: auto;
+  background: #07070b;
+  transform: none !important;
+}
+
+.video-stage.is-main-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.44) 0%,
+    rgba(0, 0, 0, 0.04) 24%,
+    rgba(0, 0, 0, 0.04) 68%,
+    rgba(0, 0, 0, 0.66) 100%
+  );
+  pointer-events: none;
+  z-index: 3;
+  transition: opacity 0.25s ease;
+}
+
+.app-container.clean-ui-mode .video-stage.is-main-stage::after {
+  opacity: 0;
+}
+
+/* 右上角悬浮小窗（支持按住自由拖动与大小微调） */
+.video-stage.is-pip-stage {
+  position: absolute;
+  top: calc(var(--safe-top) + 52px);
+  right: 14px;
+  width: 108px;
+  height: 158px;
+  border-radius: 16px;
+  z-index: 24;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  background: #141418;
+  border: 1.4px solid rgba(255, 255, 255, 0.36);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.68), 0 0 0 1px rgba(192, 132, 252, 0.16);
+  transform: translate3d(var(--pip-dx, 0px), var(--pip-dy, 0px), 0) scale(var(--pip-scale, 1));
+  transform-origin: center center;
+}
+
+.video-stage.is-pip-stage:active {
+  cursor: grabbing;
+}
+
+/* 当隐藏小窗时 */
+.app-container.hide-pip-window .video-stage.is-pip-stage {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: translate3d(var(--pip-dx, 0px), var(--pip-dy, 0px), 0) scale(0.85);
+}
+
+/* 小窗提示角标：平时录屏彻底隐藏，仅在自由挪动模式下显示提示 */
+.pip-corner-hint {
+  position: absolute;
+  bottom: 7px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(16, 16, 22, 0.56);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.88);
+  white-space: nowrap;
+  pointer-events: none;
+  display: none !important;
+}
+
+.app-container.layout-edit-mode .video-stage.is-pip-stage .pip-corner-hint {
+  display: block !important;
+}
+
+/* 对方未上传视频时的 Laya 氛围等待背景 */
+.peer-empty-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  background: radial-gradient(circle at 50% 34%, rgba(168, 85, 247, 0.24) 0%, rgba(28, 16, 40, 0.86) 46%, #050508 100%);
+  text-align: center;
+}
+
+.peer-empty-fallback.active {
+  display: flex;
+}
+
+.peer-fallback-avatar-ring {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.86);
+  overflow: hidden;
+  box-shadow: 0 0 28px rgba(168, 85, 247, 0.42);
+}
+
+.video-stage.is-pip-stage .peer-fallback-avatar-ring {
+  width: 50px;
+  height: 50px;
+  border-width: 1.6px;
+}
+
+.peer-fallback-avatar-ring img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.peer-fallback-tip {
+  font-size: 13.5px;
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1.5;
+}
+
+.video-stage.is-pip-stage .peer-fallback-tip {
+  font-size: 10.5px;
+  padding: 0 4px;
+}
+
+/* ==================== 关闭摄像头：白色虚化毛玻璃背景 + 我的头像 ==================== */
+.camera-off-frosted {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #eff1f7;
+}
+
+.camera-off-frosted.active {
+  display: flex;
+}
+
+/* 中层：用我的头像放大柔焦营造光学浅景深层，保证白底通透不生硬 */
+.frosted-avatar-aura {
+  position: absolute;
+  inset: -24%;
+  background-size: cover;
+  background-position: center;
+  transform: scale(1.35);
+  filter: blur(28px) brightness(1.36) saturate(0.42);
+  opacity: 0.46;
+  pointer-events: none;
+}
+
+/* 表层：奶白高透毛玻璃虚化层（彻底区别于灰色底块） */
+.frosted-white-veil {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.82) 0%, rgba(248, 249, 253, 0.86) 55%, rgba(238, 241, 249, 0.92) 100%);
+  backdrop-filter: blur(24px) saturate(135%);
+  -webkit-backdrop-filter: blur(24px) saturate(135%);
+  pointer-events: none;
+}
+
+/* 高光柔雾圈 */
+.frosted-white-veil::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.08) 48%, rgba(236, 232, 248, 0.25) 100%);
+  pointer-events: none;
+}
+
+/* 居中我的头像（支持小窗与全屏自适应及自由平移缩放） */
+.camera-off-avatar-wrap {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  transform: translate3d(var(--self-avatar-x, 0px), calc(-4% + var(--self-avatar-y, 0px)), 0) scale(var(--self-avatar-scale, 1));
+  transform-origin: center center;
+}
+
+.camera-off-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 6px 20px rgba(34, 30, 56, 0.14),
+    0 0 0 4px rgba(255, 255, 255, 0.45);
+  background: #ffffff;
+}
+
+.video-stage.is-main-stage .camera-off-avatar {
+  width: 112px;
+  height: 112px;
+  border-width: 2.8px;
+  box-shadow:
+    0 14px 36px rgba(28, 22, 52, 0.16),
+    0 0 0 8px rgba(255, 255, 255, 0.5);
+}
+
+/* 在右上角小窗模式下保持白色边框精致感 */
+.video-stage.is-pip-stage:has(.camera-off-frosted.active) {
+  border-color: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.48);
+}
+
+.camera-off-status-pill {
+  display: none;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  color: rgba(38, 34, 52, 0.82);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+
+.video-stage.is-main-stage .camera-off-status-pill {
+  display: inline-flex;
+}
+
+.app-container.clean-ui-mode .camera-off-status-pill {
+  display: none !important;
+}
+
+/* ==================== 前景层次与纯净 UI 模式控制 ==================== */
+.top-bar-row,
+.profile-section,
+.waveform-section,
+.chat-messages-stream,
+.bottom-controls-area {
+  position: relative;
+  z-index: 10;
+  transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+/* 顶部栏：置中 Logo+Laya标题 + 右上角控制按钮 */
+.top-bar-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 20px;
+  z-index: 30;
+  min-height: 36px;
+}
+
+.top-header {
+  position: relative;
+  z-index: 35;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  cursor: default;
+  transition: opacity 0.22s ease;
+}
+
+.brand-logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  object-fit: cover;
+  box-shadow: 0 0 10px rgba(196, 43, 179, 0.5);
+  flex-shrink: 0;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.brand-title {
+  font-size: 17.5px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: rgba(255, 255, 255, 0.96);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+  transition: opacity 0.22s ease;
+}
+
+/* Laya Logo 独立隐藏 */
+.app-container.hide-laya-logo .brand-logo {
+  display: none !important;
+}
+
+/* 隐藏顶部文字 */
+.app-container.hide-brand-text .brand-title {
+  display: none !important;
+}
+
+/* 隐藏全部前景文字与操作 UI 模式（默认唯独保留 Laya Logo） */
+.app-container.clean-ui-mode .brand-title {
+  display: none !important;
+}
+
+.app-container.clean-ui-mode.keep-title-in-clean .brand-title {
+  display: inline !important;
+}
+
+.app-container.clean-ui-mode .top-right-actions,
+.app-container.clean-ui-mode .profile-section,
+.app-container.clean-ui-mode .waveform-section,
+.app-container.clean-ui-mode .chat-messages-stream,
+.app-container.clean-ui-mode .bottom-controls-area {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* 如果处于语音模式且用户开启「语音纯净模式」，确保中间声波也干净隐身 */
+.app-container.mode-video .profile-section,
+.app-container.mode-video .waveform-section {
+  display: none !important;
+}
+
+/* 右上角工具组 */
+.top-right-actions {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: opacity 0.22s ease;
+}
+
+.top-icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.2s ease;
+}
+
+.top-icon-btn:active {
+  transform: scale(0.9);
+  background: rgba(168, 85, 247, 0.35);
+}
+
+.secret-reset-corner {
+  position: absolute;
+  right: 88px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  outline: none;
+  opacity: 0;
+  z-index: 31;
+}
+
+/* ==================== 语音模式：中上区域头像 + 昵称 + 声波 ==================== */
+.profile-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 1vh;
+}
+
+.avatar-row {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.add-friend-box {
+  position: absolute;
+  left: calc(50% - 132px);
+  top: 50%;
+  transform: translateY(-42%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.15s ease;
+}
+
+.add-friend-box.hidden {
+  display: none;
+}
+
+.add-friend-box:active {
+  transform: translateY(-42%) scale(0.93);
+}
+
+.add-friend-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1.2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 22px;
+  font-weight: 400;
+  transition: all 0.2s ease;
+}
+
+.add-friend-box.followed .add-friend-circle {
+  border-color: rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.add-friend-label {
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.58);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.avatar-wrapper {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  border: 2.2px solid rgba(255, 255, 255, 0.9);
+  overflow: hidden;
+  cursor: pointer;
+  background: #1a1a1e;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.65);
+  transition: transform 0.18s ease, box-shadow 0.3s ease;
+}
+
+.avatar-wrapper.speaking-glow {
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.12), 0 0 22px rgba(196, 43, 179, 0.42);
+}
+
+.avatar-wrapper:active {
+  transform: scale(0.96);
+}
+
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.nickname-box {
+  margin-top: 11px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  min-height: 26px;
+}
+
+.nickname-text {
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: 0.4px;
+  text-align: center;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 10px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.nickname-text:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.nickname-text.hidden {
+  display: none;
+}
+
+.profile-tags-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.78);
+  letter-spacing: 0.2px;
+}
+
+.profile-tags-pill.hidden {
+  display: none;
+}
+
+/* 梭形高对比白色语音声波条 */
+.waveform-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 64px;
+  cursor: pointer;
+}
+
+.waveform-bars {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4.5px;
+  height: 52px;
+}
+
+.wave-bar {
+  width: 5px;
+  background-color: #ffffff;
+  border-radius: 999px;
+  height: 8px;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.25);
+  transition: height 0.13s ease-in-out, opacity 0.25s ease;
+}
+
+.waveform-bars.paused .wave-bar {
+  opacity: 0.35;
+  box-shadow: none;
+}
+
+.typing-indicator {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.6);
+  height: 16px;
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.typing-indicator.visible {
+  opacity: 1;
+}
+
+/* ==================== 实时聊天文字弹幕气泡区 ==================== */
+.chat-messages-stream {
+  width: 100%;
+  padding: 0 18px;
+  max-height: 116px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  scrollbar-width: none;
+  margin-top: auto;
+  margin-bottom: 10px;
+}
+
+.app-container.mode-video .chat-messages-stream {
+  max-height: 110px;
+}
+
+.chat-messages-stream::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-bubble-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  animation: bubbleIn 0.2s ease-out;
+}
+
+.chat-bubble-row.self {
+  justify-content: flex-end;
+}
+
+.chat-bubble-row.peer {
+  justify-content: flex-start;
+}
+
+.chat-bubble-row.system {
+  justify-content: center;
+}
+
+.chat-bubble {
+  max-width: 85%;
+  padding: 7px 14px;
+  border-radius: 16px;
+  font-size: 15px;
+  line-height: 1.42;
+  word-break: break-word;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.chat-bubble.self {
+  background: rgba(168, 85, 247, 0.34);
+  border: 1px solid rgba(168, 85, 247, 0.5);
+  color: #ffffff;
+  border-bottom-right-radius: 4px;
+}
+
+.chat-bubble.peer {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  border-bottom-left-radius: 4px;
+}
+
+.chat-bubble.system {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 12.5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+}
+
+.bubble-sender {
+  font-weight: 600;
+  margin-right: 4px;
+  color: #e9d5ff;
+}
+
+.chat-bubble.peer .bubble-sender {
+  color: #93c5fd;
+}
+
+@keyframes bubbleIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==================== 底部控制区（严格延续 Laya 风格） ==================== */
+.bottom-controls-area {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 16px;
+  padding-bottom: var(--custom-bottom-pad, 50px);
+  gap: 14px;
+}
+
+.timer-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 42px;
+  cursor: pointer;
+}
+
+.call-timer {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.8px;
+  color: #ffffff;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.65);
+}
+
+.hangup-info {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  animation: fadeIn 0.22s ease;
+}
+
+.hangup-info.visible {
+  display: flex;
+}
+
+.hangup-status-badge {
+  font-size: 15px;
+  font-weight: 600;
+  color: #ff5b63;
+  letter-spacing: 0.3px;
+}
+
+.hangup-timestamp {
+  font-size: 13.5px;
+  color: rgba(255, 255, 255, 0.72);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Laya 标志性三键/单键行 */
+.action-buttons-row {
+  width: 100%;
+  max-width: 300px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.action-buttons-row.single-mode .side-ctrl-btn {
+  display: none;
+}
+
+.action-buttons-row.single-mode {
+  justify-content: center;
+}
+
+.ctrl-btn-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  min-width: 68px;
+}
+
+.ctrl-circle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.ctrl-circle:active {
+  transform: scale(0.92);
+}
+
+.ctrl-circle.outline {
+  border: 1.6px solid rgba(255, 255, 255, 0.78);
+  background: rgba(18, 16, 24, 0.42);
+  color: #ffffff;
+}
+
+.ctrl-circle.outline.active-toggle {
+  background: rgba(255, 255, 255, 0.92);
+  color: #111115;
+  border-color: #ffffff;
+}
+
+.ctrl-circle.video-btn.active-toggle {
+  background: linear-gradient(135deg, #a855f7, #ec4899);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 4px 16px rgba(168, 85, 247, 0.48);
+}
+
+/* 当视频模式且关闭我的摄像头时：按钮变为高亮白紫柔光描边，Laya 风清晰指示 */
+.ctrl-circle.video-btn.cam-off-state {
+  background: rgba(255, 255, 255, 0.92);
+  color: #1c1826;
+  border-color: rgba(192, 132, 252, 0.9);
+  box-shadow: 0 4px 16px rgba(192, 132, 252, 0.35);
+}
+
+.ctrl-circle.hangup {
+  width: 62px;
+  height: 62px;
+  background: linear-gradient(180deg, #ff543e 0%, #e6353f 100%);
+  border: none;
+  color: #ffffff;
+  box-shadow: 0 4px 18px rgba(235, 58, 66, 0.45);
+}
+
+.ctrl-circle.hangup.is-ended {
+  background: #2c2c30;
+  box-shadow: none;
+  border: 1.5px solid rgba(255, 255, 255, 0.24);
+}
+
+.ctrl-label {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.88);
+  letter-spacing: 0.3px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.72);
+  white-space: nowrap;
+}
+
+/* 底部多功能输入栏 */
+.bottom-dock {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 0;
+}
+
+.dock-left-icons {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.dock-icon-btn {
+  height: 36px;
+  min-width: 36px;
+  padding: 0 10px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.dock-icon-btn.peer-mode {
+  background: rgba(59, 130, 246, 0.38);
+  border: 1px solid rgba(96, 165, 250, 0.58);
+  color: #bfdbfe;
+}
+
+.dock-icon-btn:active {
+  opacity: 0.7;
+}
+
+.chat-pill {
+  flex: 1;
+  height: 42px;
+  background: rgba(29, 28, 35, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 21px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.chat-input {
+  flex: 1;
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 15px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.chat-input::placeholder {
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.send-arrow-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.15s ease, background 0.2s ease;
+}
+
+.send-arrow-btn:active {
+  transform: scale(0.88);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dock-right-speaker {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.88);
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.dock-right-speaker::after {
+  content: "";
+  position: absolute;
+  bottom: 3px;
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: #34d399;
+  transition: background 0.2s ease;
+}
+
+.dock-right-speaker.speaker-off::after {
+  background: #f87171;
+}
+
+.hidden-file-input {
+  display: none !important;
+}
+
+/* ==================== iOS 风格底部菜单（Laya 黑紫毛玻璃） ==================== */
+.action-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 95;
+  padding: 0 12px calc(var(--safe-bottom) + 10px);
+}
+
+.action-sheet-backdrop.open {
+  display: flex;
+}
+
+.ios-action-sheet {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: slideUp 0.2s ease-out;
+}
+
+.ios-sheet-group {
+  background: rgba(26, 24, 32, 0.96);
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(192, 132, 252, 0.2);
+}
+
+.ios-sheet-header {
+  padding: 12px 16px;
+  text-align: center;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.56);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ios-sheet-btn {
+  width: 100%;
+  padding: 14px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font-size: 15.5px;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.ios-sheet-btn:last-child {
+  border-bottom: none;
+}
+
+.ios-sheet-btn:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ios-sheet-btn.highlight {
+  color: #d8b4fe;
+  font-weight: 600;
+}
+
+.ios-sheet-btn.danger {
+  color: #ff5b63;
+}
+
+.ios-sheet-cancel {
+  background: rgba(38, 36, 46, 0.98);
+  border-radius: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+
+/* ==================== 3秒匹配雷达动画遮罩 ==================== */
+.matching-overlay {
+  position: fixed;
+  inset: 0;
+  background: #000000;
+  z-index: 90;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+
+.matching-overlay.active {
+  display: flex;
+}
+
+.radar-circle {
+  position: relative;
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(196, 43, 179, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.radar-circle::before,
+.radar-circle::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(196, 43, 179, 0.35);
+  animation: radarPulse 1.6s infinite ease-out;
+}
+
+.radar-circle::after {
+  animation-delay: 0.8s;
+}
+
+@keyframes radarPulse {
+  0% { transform: scale(0.85); opacity: 0.9; }
+  100% { transform: scale(1.65); opacity: 0; }
+}
+
+.matching-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  letter-spacing: 0.5px;
+}
+
+/* ==================== 后台自定义设置抽屉 ==================== */
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 100;
+}
+
+.settings-backdrop.open {
+  display: flex;
+}
+
+.settings-sheet {
+  width: 100%;
+  max-width: 480px;
+  max-height: 88dvh;
+  overflow-y: auto;
+  background: #17161c;
+  border-radius: 22px 22px 0 0;
+  padding: 18px 18px calc(var(--safe-bottom) + 20px);
+  color: #ffffff;
+  border-top: 1px solid rgba(192, 132, 252, 0.25);
+  animation: slideUp 0.22s ease-out;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 8px;
+}
+
+.sheet-title {
+  font-size: 16.5px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.sheet-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.sheet-help-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(168, 85, 247, 0.28);
+  border: 1.5px solid rgba(192, 132, 252, 0.75);
+  color: #f3e8ff;
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.sheet-close {
+  background: rgba(255, 255, 255, 0.14);
+  border: none;
+  color: #ffffff;
+  padding: 6px 14px;
+  border-radius: 16px;
+  font-size: 14.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.settings-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.settings-card-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #d8b4fe;
+  margin-bottom: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.form-sub-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.56);
+  margin: 8px 0 6px;
+}
+
+.form-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.form-row + .form-row {
+  margin-top: 7px;
+}
+
+.form-input {
+  flex: 1;
+  min-width: 110px;
+  background: #272530;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 8px 11px;
+  color: #ffffff;
+  font-size: 14px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.form-input.short-num {
+  flex: 0 0 74px;
+  min-width: 74px;
+  text-align: center;
+}
+
+.form-input:focus {
+  border-color: #a855f7;
+}
+
+.btn-action {
+  background: linear-gradient(135deg, #8b3dff, #a855f7);
+  color: #ffffff;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s ease, transform 0.12s ease;
+}
+
+.btn-action:active {
+  transform: scale(0.97);
+}
+
+.btn-action.secondary {
+  background: #272530;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.btn-action.active-opt {
+  background: linear-gradient(135deg, #8b3dff, #c026d3);
+  border-color: rgba(232, 121, 249, 0.7);
+  color: #ffffff;
+}
+
+.btn-action.soft-pill {
+  padding: 6px 10px;
+  font-size: 12.5px;
+  border-radius: 999px;
+}
+
+.avatar-mini-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.mini-avatar-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid rgba(255, 255, 255, 0.8);
+  flex-shrink: 0;
+  background: #222;
+}
+
+.sheet-tip {
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.56);
+  text-align: center;
+  line-height: 1.5;
+  margin-top: 8px;
+}
+
+/* ==================== 使用教程弹窗 ==================== */
+.tutorial-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 14, 0.96);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 130;
+  display: none;
+  flex-direction: column;
+  padding-top: var(--safe-top, 18px);
+  padding-bottom: var(--safe-bottom, 14px);
+}
+
+.tutorial-modal.open {
+  display: flex;
+}
+
+.tutorial-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(24, 24, 28, 0.9);
+  flex-shrink: 0;
+}
+
+.tutorial-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.tutorial-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tut-ctrl-btn {
+  height: 30px;
+  min-width: 30px;
+  padding: 0 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.tut-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 91, 99, 0.22);
+  border: 1px solid rgba(255, 91, 99, 0.5);
+  color: #ff6b72;
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-left: 4px;
+}
+
+.tutorial-scroll-body {
+  flex: 1;
+  width: 100%;
+  overflow: auto;
+  padding: 14px;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+.tutorial-zoom-inner {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  transform-origin: top left;
+  transition: width 0.18s ease;
+}
+
+.tutorial-step-card {
+  width: 100%;
+  background: #18181c;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tutorial-step-badge {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #c084fc;
+  padding: 0 4px;
+}
+
+.tutorial-step-img {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  display: block;
+  cursor: zoom-in;
+}
+
+
+/* ==================== 自由拖动调整位置模式 ==================== */
+.draggable-ui-item {
+  transform: translate3d(var(--drag-x, 0px), var(--drag-y, 0px), 0);
+}
+
+.add-friend-box.draggable-ui-item {
+  transform: translate3d(var(--drag-x, 0px), calc(-42% + var(--drag-y, 0px)), 0);
+}
+
+.add-friend-box.draggable-ui-item:active {
+  transform: translate3d(var(--drag-x, 0px), calc(-42% + var(--drag-y, 0px)), 0) scale(0.93);
+}
+
+.is-dragging-now {
+  transition: none !important;
+  cursor: grabbing !important;
+}
+
+.app-container.layout-edit-mode .draggable-ui-item,
+.app-container.layout-edit-mode .video-stage.is-pip-stage {
+  outline: 1.5px dashed rgba(192, 132, 252, 0.85);
+  outline-offset: 4px;
+  border-radius: 12px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.app-container.layout-edit-mode .video-stage.is-main-stage {
+  cursor: grab;
+  touch-action: none;
+}
+
+.app-container.layout-edit-mode .draggable-ui-item:active,
+.app-container.layout-edit-mode .video-stage.is-main-stage:active {
+  cursor: grabbing;
+}
+
+/* 即使在隐藏 UI 模式下进入位置编辑，也显示顶部悬浮操作条，退出后自动恢复纯净 */
+.layout-edit-banner {
+  position: absolute;
+  top: calc(var(--safe-top) + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 24px);
+  max-width: 440px;
+  z-index: 85;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: rgba(24, 18, 36, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(192, 132, 252, 0.52);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.6);
+}
+
+.app-container.layout-edit-mode .layout-edit-banner {
+  display: flex;
+}
+
+.layout-edit-hint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.92);
+  line-height: 1.35;
+  flex: 1;
+}
+
+.layout-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.layout-banner-btn {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.layout-banner-btn.primary {
+  background: linear-gradient(135deg, #8b3dff, #c026d3);
+  border-color: rgba(232, 121, 249, 0.7);
+}
