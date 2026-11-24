@@ -14,11 +14,17 @@
   <link rel="apple-touch-icon" href="logo.png" />
   <link rel="manifest" href="manifest.json" />
   <title>Laya-語音匹配</title>
-  <link rel="stylesheet" href="style.css?v=20261120" />
+  <link rel="stylesheet" href="style.css?v=20261124" />
   <script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.min.js"></script>
 </head>
 <body>
-  <div class="app-container" id="appContainer">
+  <div class="pc-workspace-shell" id="pcWorkspaceShell">
+    <div class="pc-stage-viewport" id="pcStageViewport">
+      <div class="pc-stage-top-meta" id="pcStageTopMeta">
+        <span class="pc-device-pill" id="pcDeviceMetaText">🍎 iPhone 16 Pro 真机尺寸 · 393 × 852 (导出 880 × 1920)</span>
+      </div>
+      <div class="app-container" id="appContainer">
     <!-- ==================== 自由拖动位置模式顶部悬浮提示条 ==================== -->
     <div class="layout-edit-banner" id="layoutEditBanner">
       <span class="layout-edit-hint">✋ 按住任意元素、小窗或背景画面即可拖动位置</span>
@@ -195,6 +201,210 @@
         </div>
       </div>
     </div>
+  </div>
+    </div>
+
+    <!-- ==================== 电脑端专属右侧操作与录屏导出工作台（手机端自动隐藏） ==================== -->
+    <aside class="pc-studio-sidebar" id="pcStudioSidebar">
+      <div class="pc-studio-header">
+        <div class="pc-studio-brand">
+          <img src="logo.png" alt="Laya" class="pc-studio-logo" />
+          <div>
+            <div class="pc-studio-title">Laya 电脑端创作与导出台</div>
+            <div class="pc-studio-sub">真机苹果比例 · 双视频独立上传 · 带声音导出 MP4</div>
+          </div>
+        </div>
+        <button type="button" class="pc-help-pill" id="pcOpenTutorialBtn" title="查看使用教程">📖 教程</button>
+      </div>
+
+      <!-- 顶部固定：一键录屏导出视频（带声音）与保存高清截图 -->
+      <div class="pc-export-card">
+        <div class="pc-export-top-row">
+          <span class="pc-export-label">🎥 导出视频（含视频原声 / 语音音轨）</span>
+          <span class="pc-audio-badge" id="pcAudioStatusBadge">🔊 原声音轨已就绪</span>
+        </div>
+        <div class="pc-export-controls-row">
+          <select id="pcExportDurationSelect" class="pc-select" title="选择导出视频时长">
+            <option value="auto" selected>⏱️ 跟随主视频时长 (自动)</option>
+            <option value="5">⏱️ 录制 5 秒</option>
+            <option value="10">⏱️ 录制 10 秒</option>
+            <option value="15">⏱️ 录制 15 秒</option>
+            <option value="30">⏱️ 录制 30 秒</option>
+            <option value="60">⏱️ 录制 60 秒</option>
+            <option value="custom">✏️ 自定义秒数...</option>
+          </select>
+          <input type="number" id="pcExportCustomSecInput" class="pc-input short" value="12" min="1" max="600" style="display:none;" placeholder="秒" />
+          <label class="pc-clean-export-chk" title="勾选后导出的视频与截图自动隐藏右上角两个设置小圆钮">
+            <input type="checkbox" id="pcHideTopIconsOnExport" checked />
+            <span>导出隐藏右上设置钮</span>
+          </label>
+        </div>
+        <div class="pc-export-btn-group">
+          <button type="button" class="pc-btn-export-video" id="pcExportVideoBtn">🎥 录屏导出带声视频</button>
+          <button type="button" class="pc-btn-export-img" id="pcExportImgBtn">📸 保存高清截图</button>
+        </div>
+        <div class="pc-export-progress-bar" id="pcExportProgressWrap" style="display:none;">
+          <div class="pc-export-progress-fill" id="pcExportProgressFill"></div>
+        </div>
+      </div>
+
+      <div class="pc-studio-scroll">
+        <!-- 1. 苹果真机屏幕尺寸选择 -->
+        <div class="pc-card">
+          <div class="pc-card-title">
+            <span>📱 1. 苹果 iPhone 真机屏幕尺寸</span>
+            <span class="pc-card-tag">1:1 真机比例</span>
+          </div>
+          <div class="pc-row">
+            <select id="pcIphoneModelSelect" class="pc-select full">
+              <option value="393x852" selected>🍎 iPhone 16 Pro / 15 Pro (393 × 852 · 19.5:9 真机旗舰)</option>
+              <option value="430x932">🍎 iPhone 16 Pro Max / 15 Pro Max (430 × 932 · 19.5:9 大屏旗舰)</option>
+              <option value="390x844">🍎 iPhone 16 / 15 / 14 / 13 (390 × 844 · 19.5:9 标准真机)</option>
+              <option value="375x812">🍎 iPhone 13 mini / 11 Pro / X (375 × 812 · 19.5:9 紧凑真机)</option>
+              <option value="375x667">🍎 iPhone SE / 8 经典苹果屏 (375 × 667 · 16:9 比例)</option>
+              <option value="390x693">📱 短视频标准 9:16 竖屏 (390 × 693 · 导出 1080×1920)</option>
+            </select>
+          </div>
+          <div class="pc-row" style="margin-top:6px;">
+            <button type="button" class="pc-btn secondary active-opt" id="pcModeVoiceBtn">📞 语音匹配模式</button>
+            <button type="button" class="pc-btn secondary" id="pcModeVideoBtn">🎬 视频通话模式</button>
+            <button type="button" class="pc-btn secondary" id="pcSwapViewBtn">🔁 对调主画面与小窗</button>
+          </div>
+        </div>
+
+        <!-- 2. 主画面视频 & 右上角小窗视频上传 -->
+        <div class="pc-card">
+          <div class="pc-card-title">
+            <span>🎬 2. 主画面视频 & 右上角视频上传</span>
+            <span class="pc-card-tag">支持拖拽上传</span>
+          </div>
+
+          <div class="pc-sub-box">
+            <div class="pc-sub-head">
+              <span class="pc-sub-title">① 主画面视频（对方全屏画面）</span>
+              <span class="pc-status-dot" id="pcPeerVideoStatus">未上传</span>
+            </div>
+            <div class="pc-row">
+              <button type="button" class="pc-btn primary" id="pcUploadPeerVideoBtn">📁 上传主画面视频</button>
+              <button type="button" class="pc-btn secondary active-opt" id="pcTogglePeerAudioBtn">🔊 原声：开</button>
+              <button type="button" class="pc-btn secondary" id="pcClearPeerVideoBtn">清空</button>
+            </div>
+            <div class="pc-slider-row">
+              <span>主画面缩放：</span>
+              <input type="range" id="pcPeerVidScaleRange" min="100" max="220" value="100" />
+              <span class="pc-slider-val" id="pcPeerVidScaleVal">100%</span>
+            </div>
+          </div>
+
+          <div class="pc-sub-box" style="margin-top:8px;">
+            <div class="pc-sub-head">
+              <span class="pc-sub-title">② 右上角小窗视频（我的画面 / 白底虚化头像）</span>
+              <span class="pc-status-dot" id="pcSelfVideoStatus">白底虚化头像</span>
+            </div>
+            <div class="pc-row">
+              <button type="button" class="pc-btn primary" id="pcUploadSelfVideoBtn">📹 上传右上角视频</button>
+              <button type="button" class="pc-btn secondary active-opt" id="pcToggleSelfCamOffBtn">🤍 关摄像头(白底头像)</button>
+            </div>
+            <div class="pc-row" style="margin-top:6px;">
+              <button type="button" class="pc-btn secondary" id="pcToggleSelfAudioBtn">🔇 小窗声音：静音</button>
+              <button type="button" class="pc-btn secondary" id="pcToggleSelfMirrorBtn">🪞 镜像：关</button>
+              <button type="button" class="pc-btn secondary active-opt" id="pcTogglePipVisBtn">🪟 小窗：显示</button>
+              <button type="button" class="pc-btn secondary" id="pcClearSelfVideoBtn">清空</button>
+            </div>
+            <div class="pc-slider-row">
+              <span>右上小窗大小：</span>
+              <input type="range" id="pcPipScaleRange" min="60" max="160" value="100" />
+              <span class="pc-slider-val" id="pcPipScaleVal">100%</span>
+            </div>
+            <div class="pc-slider-row">
+              <span>小窗内部画面/头像：</span>
+              <input type="range" id="pcSelfContentScaleRange" min="60" max="200" value="100" />
+              <span class="pc-slider-val" id="pcSelfContentScaleVal">100%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. 头像、昵称、个人标签与语音素材 -->
+        <div class="pc-card">
+          <div class="pc-card-title">
+            <span>👤 3. 双方头像、昵称与语音音频素材</span>
+            <span class="pc-card-tag">点击画面也可改</span>
+          </div>
+
+          <div class="pc-avatar-grid">
+            <div class="pc-avatar-item">
+              <img id="pcPeerAvatarThumb" class="pc-avatar-thumb" src="" alt="对方头像" />
+              <div class="pc-avatar-meta">
+                <span class="pc-avatar-name">对方头像 (主头像)</span>
+                <button type="button" class="pc-btn primary sm" id="pcUploadPeerAvatarBtn">🖼️ 上传对方头像</button>
+              </div>
+            </div>
+            <div class="pc-avatar-item">
+              <img id="pcSelfAvatarThumb" class="pc-avatar-thumb" src="" alt="我的头像" />
+              <div class="pc-avatar-meta">
+                <span class="pc-avatar-name">我的头像 (右上角虚化)</span>
+                <button type="button" class="pc-btn primary sm" id="pcUploadSelfAvatarBtn">🖼️ 上传我的头像</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="pc-row" style="margin-top:8px;">
+            <input type="text" id="pcNicknameInput" class="pc-input" value="他超爱了" placeholder="对方昵称（画面自动转繁体）" />
+            <input type="text" id="pcBrandTitleInput" class="pc-input" value="Laya-语音匹配" placeholder="顶部标题文字" />
+          </div>
+          <div class="pc-row" style="margin-top:6px;">
+            <input type="text" id="pcProfileTagInput" class="pc-input" value="♂ 22岁 · 天蝎座 · 温柔低音炮" placeholder="个人标签" />
+            <button type="button" class="pc-btn secondary" id="pcToggleTagVisBtn">显示标签</button>
+          </div>
+
+          <div class="pc-sub-box" style="margin-top:8px;">
+            <div class="pc-sub-head">
+              <span class="pc-sub-title">🎵 语音通话录音 / 背景音频（导出视频同步收录）</span>
+              <span class="pc-status-dot" id="pcCustomAudioStatus">未上传音频</span>
+            </div>
+            <div class="pc-row">
+              <button type="button" class="pc-btn primary" id="pcUploadAudioBtn">🎵 上传语音/背景音</button>
+              <button type="button" class="pc-btn secondary" id="pcTogglePlayAudioBtn">▶️ 播放/暂停</button>
+              <button type="button" class="pc-btn secondary" id="pcClearAudioBtn">清空音频</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. 通话时间、挂断状态、弹幕聊天与画面自由挪动 -->
+        <div class="pc-card">
+          <div class="pc-card-title">
+            <span>⏱️ 4. 通话时长、聊天弹幕与画面微调</span>
+          </div>
+          <div class="pc-row">
+            <input type="text" id="pcCustomTimeInput" class="pc-input" value="00:22" placeholder="如 03:21 或秒数" />
+            <button type="button" class="pc-btn primary" id="pcApplyTimeBtn">应用时间</button>
+            <button type="button" class="pc-btn secondary" id="pcRandomTimeBtn">🎲 随机时长</button>
+            <button type="button" class="pc-btn secondary" id="pcResetCallBtn">🔄 重置00:00</button>
+          </div>
+          <div class="pc-row" style="margin-top:6px;">
+            <button type="button" class="pc-btn secondary" id="pcTriggerHangupBtn">🔴 模拟挂断 / 恢复通话</button>
+            <button type="button" class="pc-btn secondary" id="pcToggleFreezeTimerBtn">⏸️ 定格时间：关</button>
+          </div>
+          <div class="pc-row" style="margin-top:8px;">
+            <input type="text" id="pcQuickChatInput" class="pc-input" placeholder="输入聊天弹幕文字（回车直接发到画面）..." />
+            <button type="button" class="pc-btn primary" id="pcSendSelfChatBtn">发“我”</button>
+            <button type="button" class="pc-btn secondary" id="pcSendPeerChatBtn">发“对方”</button>
+            <button type="button" class="pc-btn secondary" id="pcClearChatBtn">清空</button>
+          </div>
+          <div class="pc-row" style="margin-top:8px;">
+            <button type="button" class="pc-btn secondary" id="pcToggleLayoutEditBtn">✋ 自由拖动元素位置</button>
+            <button type="button" class="pc-btn secondary" id="pcResetLayoutBtn">↺ 位置复位</button>
+            <button type="button" class="pc-btn secondary" id="pcToggleCleanUiBtn">✨ 隐藏前景UI</button>
+            <button type="button" class="pc-btn secondary" id="pcOpenFullSettingsBtn">⚙️ 更多设置</button>
+          </div>
+          <div class="pc-slider-row" style="margin-top:8px;">
+            <span>底部距离微调：</span>
+            <input type="range" id="pcBottomPadRange" min="0" max="120" value="50" />
+            <span class="pc-slider-val" id="pcBottomPadVal">50px</span>
+          </div>
+        </div>
+      </div>
+    </aside>
   </div>
 
   <!-- 隐藏文件选择器 -->
@@ -478,6 +688,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20261120"></script>
+  <div class="pc-toast" id="pcToast"></div>
+  <script src="app.js?v=20261124"></script>
 </body>
 </html>
