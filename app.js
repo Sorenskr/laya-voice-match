@@ -298,6 +298,47 @@
   let timerInterval = null;
   let waveInterval = null;
   let pendingAutoReplyTimers = [];
+  let exportRecordStartMs = 0;
+  let exportHangupAtSec = null;
+
+  // 合成并播放真实电话挂断提示音（"嘟——" 双频挂机忙音，类似真手机挂断电话反馈）
+  function playHangupTone() {
+    const chk = $('pcEnableHangupTone');
+    if (chk && !chk.checked) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+
+      [0, 0.24].forEach((delay, idx) => {
+        const dur = idx === 0 ? 0.15 : 0.22;
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc1.type = 'sine';
+        osc2.type = 'sine';
+        osc1.frequency.setValueAtTime(idx === 0 ? 480 : 440, now + delay);
+        osc2.frequency.setValueAtTime(idx === 0 ? 620 : 580, now + delay);
+        gain.gain.setValueAtTime(0.0001, now + delay);
+        gain.gain.exponentialRampToValueAtTime(0.18, now + delay + 0.015);
+        gain.gain.setValueAtTime(0.18, now + delay + dur - 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + dur);
+
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(ctx.destination);
+        osc1.start(now + delay);
+        osc2.start(now + delay);
+        osc1.stop(now + delay + dur + 0.01);
+        osc2.stop(now + delay + dur + 0.01);
+      });
+
+      setTimeout(() => {
+        if (ctx.close) ctx.close().catch(() => {});
+      }, 700);
+    } catch (e) {}
+  }
 
   function clearPendingAutoReplyTimers() {
     if (pendingAutoReplyTimers.length > 0) {
@@ -532,7 +573,11 @@
   }
 
   function triggerHangup() {
+    if (state.isCallEnded) return;
     state.isCallEnded = true;
+    if (isExportRecording && exportRecordStartMs > 0 && exportHangupAtSec === null) {
+      exportHangupAtSec = Math.max(0.1, (performance.now() - exportRecordStartMs) / 1000);
+    }
     if (timerInterval) {
       clearInterval(timerInterval);
       timerInterval = null;
@@ -548,10 +593,11 @@
     if (customAudioEl && !customAudioEl.paused) {
       try { customAudioEl.pause(); } catch (e) {}
     }
+    playHangupTone();
     renderTimer();
     hangupInfoEl.classList.add('visible');
     hangupCircle.classList.add('is-ended');
-    hangupLabel.textContent = '已掛斷(點此重連)';
+    hangupLabel.textContent = '已掛斷';
     waveformBars.classList.add('paused');
     avatarTrigger.classList.remove('speaking-glow');
     resetWaveBarsToStatic();
@@ -1278,11 +1324,10 @@
     addFriendLabel.textContent = state.isFollowed ? '已發送申請' : '添加好友/關注';
   });
 
+  // 点击画面上的红色电话按键：就是纯粹的挂断电话（像真实手机打电话挂机一样）
   hangupBtn.addEventListener('click', () => {
     if (!state.isCallEnded) {
       triggerHangup();
-    } else {
-      startCallTimer();
     }
   });
 
@@ -1916,8 +1961,19 @@
     const isVideo = state.callMode === 'video';
     const pcModeVoiceBtn = $('pcModeVoiceBtn');
     const pcModeVideoBtn = $('pcModeVideoBtn');
-    if (pcModeVoiceBtn) pcModeVoiceBtn.classList.toggle('active-opt', !isVideo);
-    if (pcModeVideoBtn) pcModeVideoBtn.classList.toggle('active-opt', isVideo);
+    if (pcModeVoiceBtn) {
+      pcModeVoiceBtn.classList.toggle('active', !isVideo);
+      pcModeVoiceBtn.classList.toggle('active-opt', !isVideo);
+    }
+    if (pcModeVideoBtn) {
+      pcModeVideoBtn.classList.toggle('active', isVideo);
+      pcModeVideoBtn.classList.toggle('active-opt', isVideo);
+    }
+
+    const pcPipModeFrostedBtn = $('pcPipModeFrostedBtn');
+    const pcPipModeVideoBtn = $('pcPipModeVideoBtn');
+    if (pcPipModeFrostedBtn) pcPipModeFrostedBtn.classList.toggle('active', state.isSelfCameraOff);
+    if (pcPipModeVideoBtn) pcPipModeVideoBtn.classList.toggle('active', !state.isSelfCameraOff);
 
     const pcPeerVideoStatus = $('pcPeerVideoStatus');
     if (pcPeerVideoStatus) {
@@ -2028,8 +2084,8 @@
 
     const pcTriggerHangupBtn = $('pcTriggerHangupBtn');
     if (pcTriggerHangupBtn) {
-      pcTriggerHangupBtn.classList.toggle('active-opt', state.isCallEnded);
-      pcTriggerHangupBtn.textContent = state.isCallEnded ? '🟢 恢复通话 (当前已挂断)' : '🔴 模拟挂断';
+      pcTriggerHangupBtn.classList.toggle('is-ended', state.isCallEnded);
+      pcTriggerHangupBtn.textContent = state.isCallEnded ? '☎️ 当前已挂断 (点右侧重拨)' : '🔴 点击挂断电话';
     }
 
     const pcToggleFreezeTimerBtn = $('pcToggleFreezeTimerBtn');
@@ -2075,11 +2131,244 @@
 
     const pcExportDurationSelect = $('pcExportDurationSelect');
     const pcExportCustomSecInput = $('pcExportCustomSecInput');
-    if (pcExportDurationSelect && pcExportCustomSecInput) {
-      pcExportDurationSelect.addEventListener('change', () => {
-        pcExportCustomSecInput.style.display = pcExportDurationSelect.value === 'custom' ? 'block' : 'none';
+    const pcExportDurRange = $('pcExportDurRange');
+    const pcDurChips = Array.from(document.querySelectorAll('#pcDurChipsRow .pc-dur-chip'));
+
+    const updateExportBtnDurationLabel = () => {
+      const btn = $('pcExportVideoBtn');
+      if (!btn || isExportRecording) return;
+      const mode = pcExportDurationSelect ? pcExportDurationSelect.value : 'auto';
+      if (mode === 'auto') {
+        btn.textContent = '🎥 录屏导出带声视频 (跟随视频时长)';
+      } else {
+        const sec = Math.max(1, parseFloat(pcExportCustomSecInput?.value) || 10);
+        btn.textContent = `🎥 录屏导出带声视频 (${sec}秒)`;
+      }
+    };
+
+    const setExportDurationMode = (modeVal, customSecVal) => {
+      if (!pcExportDurationSelect) return;
+      if (modeVal === 'auto') {
+        pcExportDurationSelect.value = 'auto';
+      } else {
+        pcExportDurationSelect.value = 'custom';
+        const s = Math.max(1, Math.min(600, parseFloat(customSecVal) || 10));
+        if (pcExportCustomSecInput) pcExportCustomSecInput.value = s;
+        if (pcExportDurRange) pcExportDurRange.value = Math.min(120, Math.max(2, s));
+      }
+      pcDurChips.forEach((chip) => {
+        const d = chip.dataset.dur;
+        if (modeVal === 'auto') {
+          chip.classList.toggle('active', d === 'auto');
+        } else {
+          chip.classList.toggle('active', d === String(customSecVal));
+        }
+      });
+      updateExportBtnDurationLabel();
+    };
+
+    pcDurChips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const d = chip.dataset.dur;
+        if (d === 'auto') {
+          setExportDurationMode('auto');
+          showPcToast('⏱️ 已设为：自动跟随主视频/语音时长');
+        } else {
+          setExportDurationMode('custom', parseFloat(d) || 10);
+          showPcToast(`⏱️ 已选择导出时长：${d} 秒`);
+        }
+      });
+    });
+
+    if (pcExportDurRange) {
+      pcExportDurRange.addEventListener('input', (e) => {
+        setExportDurationMode('custom', e.target.value);
       });
     }
+    if (pcExportCustomSecInput) {
+      pcExportCustomSecInput.addEventListener('input', (e) => {
+        setExportDurationMode('custom', e.target.value);
+      });
+    }
+
+    // 0. 实时画面互动动作台事件绑定
+    $('pcActMatchIntroBtn')?.addEventListener('click', () => {
+      playMatchIntroBtn.click();
+      showPcToast('✨ 已触发 3 秒语音匹配雷达进场动画');
+    });
+
+    const SAMPLE_PEER_REPLIES = [
+      '哈囉，聽得到我說話嗎？😊',
+      '你的聲音好好聽喔，哪裡人呀？',
+      '要開個視頻看看嗎？我剛洗完澡哈哈',
+      '怎麼不開攝像頭呀，害羞了嗎✨',
+      '太有緣了吧，居然匹配到你！'
+    ];
+    $('pcActSimulateReplyBtn')?.addEventListener('click', () => {
+      if (state.isCallEnded) {
+        showPcToast('⚠️ 当前已挂断，请先点“重新拨通”恢复通话');
+        return;
+      }
+      typingIndicator.classList.add('visible');
+      const scriptRaw = autoReplyScriptInput.value.trim();
+      const pool = scriptRaw
+        ? scriptRaw.split('/').map((s) => s.trim()).filter(Boolean)
+        : SAMPLE_PEER_REPLIES;
+      const line = pool[state.autoReplyIndex % pool.length] || SAMPLE_PEER_REPLIES[0];
+      state.autoReplyIndex += 1;
+      const tid = setTimeout(() => {
+        typingIndicator.classList.remove('visible');
+        if (!state.isCallEnded) {
+          appendChatBubble(line, 'peer', nicknameDisplay.textContent || '對方');
+        }
+      }, 1350);
+      pendingAutoReplyTimers.push(tid);
+      showPcToast('💬 对方正在输入，即将弹出回复气泡...');
+    });
+
+    $('pcActToggleFollowBtn')?.addEventListener('click', () => {
+      if (addFriendBtn.classList.contains('hidden')) {
+        addFriendBtn.classList.remove('hidden');
+      }
+      addFriendBtn.click();
+      showPcToast(state.isFollowed ? '❤️ 已触发：+ 添加好友 -> ✓ 已发送申请' : '➕ 已恢复：+ 添加好友/关注');
+    });
+
+    $('pcActToggleMuteBtn')?.addEventListener('click', () => {
+      muteBtn.click();
+      showPcToast(state.isMuted ? '🔇 已切换为静音状态' : '🎙️ 已取消静音，声波恢复跳动');
+    });
+
+    // 主画面与右上角视频的进度条、播放/暂停、音量滑块及滚轮缩放控制
+    const pcPlayPausePeerVidBtn = $('pcPlayPausePeerVidBtn');
+    const pcPeerVidSeekRange = $('pcPeerVidSeekRange');
+    const pcPeerVidTimeLabel = $('pcPeerVidTimeLabel');
+    const pcPeerVidVolRange = $('pcPeerVidVolRange');
+
+    if (pcPlayPausePeerVidBtn) {
+      pcPlayPausePeerVidBtn.addEventListener('click', () => {
+        if (!state.peerVideoUrl) {
+          peerVideoFileInput.click();
+          return;
+        }
+        if (peerVideoEl.paused) {
+          safePlayVideo(peerVideoEl, state.peerVideoMuted);
+          pcPlayPausePeerVidBtn.textContent = '⏸️ 暂停';
+        } else {
+          peerVideoEl.pause();
+          pcPlayPausePeerVidBtn.textContent = '▶️ 播放';
+        }
+      });
+    }
+    if (pcPeerVidSeekRange) {
+      pcPeerVidSeekRange.addEventListener('input', (e) => {
+        if (peerVideoEl.duration && isFinite(peerVideoEl.duration)) {
+          peerVideoEl.currentTime = (parseFloat(e.target.value) / 100) * peerVideoEl.duration;
+        }
+      });
+    }
+    if (pcPeerVidVolRange) {
+      pcPeerVidVolRange.addEventListener('input', (e) => {
+        const v = Math.max(0, Math.min(1, (parseFloat(e.target.value) || 0) / 100));
+        peerVideoEl.volume = v;
+        if (v === 0 && !state.peerVideoMuted) {
+          state.peerVideoMuted = true;
+          peerVideoEl.muted = true;
+        } else if (v > 0 && state.peerVideoMuted) {
+          state.peerVideoMuted = false;
+          peerVideoEl.muted = false;
+        }
+        renderPeerStage();
+        syncPcStudioUI();
+      });
+    }
+    peerVideoEl.addEventListener('timeupdate', () => {
+      const cur = peerVideoEl.currentTime || 0;
+      const dur = (peerVideoEl.duration && isFinite(peerVideoEl.duration)) ? peerVideoEl.duration : 0;
+      if (pcPeerVidTimeLabel) {
+        pcPeerVidTimeLabel.textContent = `${formatDuration(cur)} / ${formatDuration(dur)}`;
+      }
+      if (pcPeerVidSeekRange && dur > 0 && document.activeElement !== pcPeerVidSeekRange) {
+        pcPeerVidSeekRange.value = ((cur / dur) * 100).toFixed(1);
+      }
+      if (pcPlayPausePeerVidBtn) {
+        pcPlayPausePeerVidBtn.textContent = peerVideoEl.paused ? '▶️ 播放' : '⏸️ 暂停';
+      }
+    });
+
+    const pcPlayPauseSelfVidBtn = $('pcPlayPauseSelfVidBtn');
+    const pcSelfVidSeekRange = $('pcSelfVidSeekRange');
+    const pcSelfVidTimeLabel = $('pcSelfVidTimeLabel');
+    const pcSelfVidVolRange = $('pcSelfVidVolRange');
+
+    if (pcPlayPauseSelfVidBtn) {
+      pcPlayPauseSelfVidBtn.addEventListener('click', () => {
+        if (state.selfVideoSource !== 'upload' || !state.selfVideoUrl) {
+          selfVideoFileInput.click();
+          return;
+        }
+        if (state.isSelfCameraOff) {
+          toggleSelfCameraOff(false);
+        }
+        if (selfVideoEl.paused) {
+          safePlayVideo(selfVideoEl, state.selfVideoMuted);
+          pcPlayPauseSelfVidBtn.textContent = '⏸️ 暂停';
+        } else {
+          selfVideoEl.pause();
+          pcPlayPauseSelfVidBtn.textContent = '▶️ 播放';
+        }
+      });
+    }
+    if (pcSelfVidSeekRange) {
+      pcSelfVidSeekRange.addEventListener('input', (e) => {
+        if (selfVideoEl.duration && isFinite(selfVideoEl.duration)) {
+          selfVideoEl.currentTime = (parseFloat(e.target.value) / 100) * selfVideoEl.duration;
+        }
+      });
+    }
+    if (pcSelfVidVolRange) {
+      pcSelfVidVolRange.addEventListener('input', (e) => {
+        const v = Math.max(0, Math.min(1, (parseFloat(e.target.value) || 0) / 100));
+        selfVideoEl.volume = v;
+        if (v > 0 && state.selfVideoMuted) {
+          state.selfVideoMuted = false;
+          selfVideoEl.muted = false;
+        } else if (v === 0 && !state.selfVideoMuted) {
+          state.selfVideoMuted = true;
+          selfVideoEl.muted = true;
+        }
+        renderSelfStage();
+        syncPcStudioUI();
+      });
+    }
+    selfVideoEl.addEventListener('timeupdate', () => {
+      const cur = selfVideoEl.currentTime || 0;
+      const dur = (selfVideoEl.duration && isFinite(selfVideoEl.duration)) ? selfVideoEl.duration : 0;
+      if (pcSelfVidTimeLabel) {
+        pcSelfVidTimeLabel.textContent = `${formatDuration(cur)} / ${formatDuration(dur)}`;
+      }
+      if (pcSelfVidSeekRange && dur > 0 && document.activeElement !== pcSelfVidSeekRange) {
+        pcSelfVidSeekRange.value = ((cur / dur) * 100).toFixed(1);
+      }
+      if (pcPlayPauseSelfVidBtn) {
+        pcPlayPauseSelfVidBtn.textContent = selfVideoEl.paused ? '▶️ 播放' : '⏸️ 暂停';
+      }
+    });
+
+    // 支持在左侧手机画面上直接用鼠标滚轮缩放右上角小窗或主画面视频
+    appContainer.addEventListener('wheel', (e) => {
+      if (state.callMode !== 'video') return;
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 4 : -4;
+      const onPip = e.target.closest('.video-stage.is-pip-stage');
+      if (onPip) {
+        layoutConfig.pip.scale = Math.min(160, Math.max(60, (layoutConfig.pip.scale || 100) + delta));
+      } else {
+        layoutConfig.peerMedia.scale = Math.min(220, Math.max(100, (layoutConfig.peerMedia.scale || 100) + delta));
+      }
+      applyCustomLayout();
+      saveCustomLayout();
+    }, { passive: false });
 
     $('pcModeVoiceBtn')?.addEventListener('click', switchToVoiceMode);
     $('pcModeVideoBtn')?.addEventListener('click', enterVideoMode);
@@ -2101,6 +2390,20 @@
 
     $('pcUploadSelfVideoBtn')?.addEventListener('click', () => selfVideoFileInput.click());
     $('pcToggleSelfCamOffBtn')?.addEventListener('click', () => toggleSelfCamOffBtn.click());
+    $('pcPipModeFrostedBtn')?.addEventListener('click', () => {
+      if (state.callMode !== 'video') state.callMode = 'video';
+      toggleSelfCameraOff(true);
+      syncPcStudioUI();
+    });
+    $('pcPipModeVideoBtn')?.addEventListener('click', () => {
+      if (state.callMode !== 'video') state.callMode = 'video';
+      if (state.selfVideoSource !== 'upload' || !state.selfVideoUrl) {
+        selfVideoFileInput.click();
+        return;
+      }
+      toggleSelfCameraOff(false);
+      syncPcStudioUI();
+    });
     $('pcToggleSelfAudioBtn')?.addEventListener('click', () => toggleSelfAudioBtn.click());
     $('pcToggleSelfMirrorBtn')?.addEventListener('click', () => toggleSelfMirrorBtn.click());
     $('pcTogglePipVisBtn')?.addEventListener('click', () => togglePipVisBtn.click());
@@ -2178,11 +2481,32 @@
       showPcToast('🔄 已重置为 00:00 通话状态');
     });
     $('pcTriggerHangupBtn')?.addEventListener('click', () => {
-      hangupBtn.click();
+      if (!state.isCallEnded) {
+        triggerHangup();
+        showPcToast('☎️ 已挂断电话，画面与声音已定格暂停');
+      } else {
+        startCallTimer();
+        showPcToast('🟢 已恢复通话状态');
+      }
     });
     $('pcToggleFreezeTimerBtn')?.addEventListener('click', () => {
       toggleFreezeTimerBtn.click();
       syncPcStudioUI();
+    });
+    $('pcPresetShortBtn')?.addEventListener('click', () => {
+      presetQuickShortBtn.click();
+      const inp = $('pcCustomTimeInput');
+      if (inp) inp.value = formatDuration(state.elapsedSeconds);
+    });
+    $('pcPresetMidBtn')?.addEventListener('click', () => {
+      presetQuickMidBtn.click();
+      const inp = $('pcCustomTimeInput');
+      if (inp) inp.value = formatDuration(state.elapsedSeconds);
+    });
+    $('pcPresetLongBtn')?.addEventListener('click', () => {
+      presetQuickLongBtn.click();
+      const inp = $('pcCustomTimeInput');
+      if (inp) inp.value = formatDuration(state.elapsedSeconds);
     });
 
     const sendQuickChat = (asPeer) => {
@@ -2631,6 +2955,17 @@
       const avBox = relBox(avatarTrigger);
       if (avBox) {
         const hasGlow = avatarTrigger.classList.contains('speaking-glow');
+        if (hasGlow) {
+          const pulsePhase = (Math.sin(performance.now() / 320) + 1) / 2;
+          const ringR = (avBox.w / 2) + (4 + pulsePhase * 8) * scaleX;
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(avBox.cx, avBox.cy, ringR, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(192, 132, 252, ${(0.32 - pulsePhase * 0.16).toFixed(2)})`;
+          ctx.lineWidth = (2.5 + pulsePhase * 2) * scaleX;
+          ctx.stroke();
+          ctx.restore();
+        }
         drawCircularImage(
           ctx,
           avatarImage,
@@ -2639,8 +2974,8 @@
           avBox.w / 2,
           2.2 * scaleX,
           'rgba(255, 255, 255, 0.9)',
-          hasGlow ? 'rgba(196, 43, 179, 0.55)' : null,
-          hasGlow ? 22 * scaleX : 0
+          hasGlow ? 'rgba(196, 43, 179, 0.58)' : null,
+          hasGlow ? 24 * scaleX : 0
         );
       }
 
@@ -2872,12 +3207,14 @@
         ctx.lineTo(4 * s, 3 * s);
         ctx.stroke();
       } else if (kind === 'hangup') {
-        const s = scaleX * 1.05;
-        ctx.beginPath();
-        ctx.arc(0, 2 * s, 10 * s, Math.PI * 1.15, Math.PI * 1.85);
-        ctx.lineWidth = 3.6 * scaleX;
-        ctx.strokeStyle = '#ffffff';
-        ctx.stroke();
+        const s = scaleX * 1.08;
+        ctx.save();
+        ctx.scale(s, s);
+        ctx.translate(-12, -12);
+        const phonePath = new Path2D('M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.996.996 0 0 1 0-1.41C3.36 8.77 7.47 7 12 7s8.64 1.77 11.71 4.67c.39.39.39 1.02 0 1.41l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28a11.27 11.27 0 0 0-2.66-1.85.996.996 0 0 1-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z');
+        ctx.fillStyle = '#ffffff';
+        ctx.fill(phonePath);
+        ctx.restore();
       } else if (kind === 'video') {
         const s = scaleX * 0.92;
         drawRoundedRectPath(ctx, -10 * s, -6 * s, 13 * s, 12 * s, 2 * s);
@@ -3018,13 +3355,53 @@
       ctx.fill();
       ctx.restore();
     }
+
+    // 若正在播放 3 秒雷达匹配进场动画，同步渲染到导出画布中
+    if (matchingOverlay && matchingOverlay.classList.contains('active')) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.92)';
+      ctx.fillRect(0, 0, outW, outH);
+      const cx = outW / 2;
+      const cy = outH * 0.44;
+      const baseR = 65 * scaleX;
+      const t = (performance.now() % 1600) / 1600;
+      [t, (t + 0.5) % 1].forEach((p) => {
+        ctx.beginPath();
+        ctx.arc(cx, cy, baseR * (0.85 + p * 0.85), 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(196, 43, 179, ${(1 - p) * 0.65})`;
+        ctx.lineWidth = 2 * scaleX;
+        ctx.stroke();
+      });
+      ctx.beginPath();
+      ctx.arc(cx, cy, baseR, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(196, 43, 179, 0.55)';
+      ctx.lineWidth = 1.6 * scaleX;
+      ctx.stroke();
+      const cleanLogoImg = (brandLogoEl && brandLogoEl.complete && isMediaCanvasClean(brandLogoEl))
+        ? brandLogoEl
+        : safeBrandLogoFallbackImg;
+      if (cleanLogoImg && cleanLogoImg.complete) {
+        const lw = 64 * scaleX;
+        ctx.save();
+        drawRoundedRectPath(ctx, cx - lw / 2, cy - lw / 2, lw, lw, 16 * scaleX);
+        ctx.clip();
+        try { ctx.drawImage(cleanLogoImg, cx - lw / 2, cy - lw / 2, lw, lw); } catch (e) {}
+        ctx.restore();
+      }
+      ctx.font = `600 ${Math.round(16 * scaleX)}px ${fontStack}`;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(matchingStatusText.textContent || '正在為您語音匹配中...', cx, cy + baseR + 46 * scaleY);
+      ctx.restore();
+    }
   }
 
-  // ==================== 高清截图导出 ====================
+  // ==================== 高清截图导出（3倍苹果 Retina 物理超清分辨率） ====================
   function exportHighDefScreenshot() {
     const spec = IPHONE_MODELS[state.iphoneModel] || IPHONE_MODELS['393x852'];
-    const outW = spec.outW;
-    const outH = spec.outH;
+    const outW = spec.w * 3;
+    const outH = spec.h * 3;
     const hideTopIcons = !!($('pcHideTopIconsOnExport')?.checked);
 
     const canvas = document.createElement('canvas');
@@ -3042,14 +3419,14 @@
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = url;
-      a.download = `Laya_iPhone_${spec.w}x${spec.h}_${Date.now()}.png`;
+      a.download = `Laya_iPhone_Retina_${outW}x${outH}_${Date.now()}.png`;
       document.body.appendChild(a);
       a.click();
       setTimeout(() => {
         if (a.parentNode) a.parentNode.removeChild(a);
         URL.revokeObjectURL(url);
       }, 500);
-      showPcToast(`📸 已保存 ${outW} × ${outH} 苹果真机超清截图！`);
+      showPcToast(`📸 已保存 ${outW} × ${outH} (3x Retina) 苹果真机超清截图！`);
     }, 'image/png', 1.0);
   }
 
@@ -3142,15 +3519,16 @@
     }
 
     const spec = IPHONE_MODELS[state.iphoneModel] || IPHONE_MODELS['393x852'];
-    // 确保宽高严格为 16 的整数倍且高度 <= 1920，100% 适配所有显卡 H.264 编码器
-    const outW = Math.round(spec.outW / 16) * 16;
-    const outH = Math.round(spec.outH / 16) * 16;
+    const isUltraQuality = ($('pcExportQualitySelect')?.value || 'ultra') === 'ultra';
+    let outW = Math.round(spec.outW / 16) * 16;
+    let outH = Math.round(spec.outH / 16) * 16;
     const hideTopIcons = !!($('pcHideTopIconsOnExport')?.checked);
+    const includeHangupTone = !!($('pcEnableHangupTone')?.checked);
 
     const durSel = $('pcExportDurationSelect')?.value || 'auto';
     let recordSeconds = 10;
     if (durSel === 'custom') {
-      recordSeconds = Math.max(1, Math.min(600, parseFloat($('pcExportCustomSecInput')?.value) || 12));
+      recordSeconds = Math.max(1, Math.min(600, parseFloat($('pcExportCustomSecInput')?.value) || 10));
     } else if (durSel !== 'auto') {
       recordSeconds = Math.max(1, parseFloat(durSel) || 10);
     } else {
@@ -3161,9 +3539,25 @@
       } else if (state.callMode === 'video' && !state.isSelfCameraOff && state.selfVideoUrl && selfVideoEl.duration && isFinite(selfVideoEl.duration) && selfVideoEl.duration > 0) {
         recordSeconds = Math.min(180, Math.max(2, Number(selfVideoEl.duration.toFixed(2))));
       } else {
-        recordSeconds = 10;
+        recordSeconds = Math.max(2, parseFloat($('pcExportCustomSecInput')?.value) || 10);
       }
     }
+
+    const autoHangupMode = $('pcAutoHangupSelect')?.value || 'manual';
+    const autoHangupBeforeSec = autoHangupMode === 'before2' ? 2.0 : (autoHangupMode === 'before3' ? 3.0 : 0);
+    let autoHangupTriggered = false;
+
+    const checkAutoHangupAtElapsed = (elapsedSec) => {
+      if (!autoHangupTriggered && autoHangupBeforeSec > 0 && recordSeconds > autoHangupBeforeSec + 0.5) {
+        if (elapsedSec >= recordSeconds - autoHangupBeforeSec && !state.isCallEnded) {
+          autoHangupTriggered = true;
+          triggerHangup();
+        }
+      }
+    };
+
+    exportRecordStartMs = performance.now();
+    exportHangupAtSec = state.isCallEnded ? 0 : null;
 
     isExportRecording = true;
     if (btn) {
@@ -3243,12 +3637,35 @@
       }
 
       const TARGET_FPS = 30;
-      const TARGET_VIDEO_BITRATE = 4_500_000;
-      const TARGET_AUDIO_BITRATE = 128_000;
+      const TARGET_VIDEO_BITRATE = isUltraQuality ? 15_000_000 : 10_000_000;
+      const TARGET_AUDIO_BITRATE = 192_000;
       const SAMPLE_RATE = activeAudioTracksToMix.length > 0
         ? (activeAudioTracksToMix[0].buffer.sampleRate || 48000)
         : 48000;
       const NUM_CHANNELS = 2;
+
+      if (isUltraQuality && window.Mp4Muxer && typeof window.VideoEncoder === 'function') {
+        const hiH = spec.h > 750 ? 2352 : 1920;
+        const hiW = Math.round(((spec.w / spec.h) * hiH) / 16) * 16;
+        try {
+          const hiSup = await VideoEncoder.isConfigSupported({
+            codec: 'avc1.640033',
+            width: hiW,
+            height: hiH,
+            bitrate: TARGET_VIDEO_BITRATE,
+            framerate: TARGET_FPS,
+            avc: { format: 'avc' }
+          });
+          if (hiSup && hiSup.supported) {
+            outW = hiW;
+            outH = hiH;
+            offCanvas.width = outW;
+            offCanvas.height = outH;
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+          }
+        } catch (e) {}
+      }
 
       renderAppStageToCanvas(ctx, outW, outH, hideTopIcons);
 
@@ -3259,12 +3676,14 @@
 
       if (window.Mp4Muxer && typeof window.VideoEncoder === 'function' && typeof window.VideoFrame === 'function') {
         const h264Candidates = [
-          'avc1.42e028',
-          'avc1.4d0028',
-          'avc1.420028',
+          'avc1.640033',
+          'avc1.640032',
+          'avc1.4d0032',
           'avc1.640028',
-          'avc1.4d002a',
-          'avc1.640032'
+          'avc1.4d0028',
+          'avc1.42e028',
+          'avc1.420028',
+          'avc1.4d002a'
         ];
         for (const codecStr of h264Candidates) {
           try {
@@ -3287,7 +3706,8 @@
         }
       }
 
-      if (webCodecsReady && activeAudioTracksToMix.length > 0 && typeof window.AudioEncoder === 'function' && typeof window.AudioData === 'function') {
+      const hasAnyAudioToMux = activeAudioTracksToMix.length > 0 || includeHangupTone;
+      if (webCodecsReady && hasAnyAudioToMux && typeof window.AudioEncoder === 'function' && typeof window.AudioData === 'function') {
         try {
           const aCfg = {
             codec: 'mp4a.40.2',
@@ -3319,7 +3739,7 @@
           fastStart: 'in-memory',
           firstTimestampBehavior: 'offset'
         };
-        if (selectedAudioConfig && activeAudioTracksToMix.length > 0) {
+        if (selectedAudioConfig && hasAnyAudioToMux) {
           muxerOpts.audio = {
             codec: 'aac',
             numberOfChannels: NUM_CHANNELS,
@@ -3339,7 +3759,7 @@
         videoEncoder.configure(selectedVideoConfig);
 
         let audioEncoder = null;
-        if (selectedAudioConfig && activeAudioTracksToMix.length > 0) {
+        if (selectedAudioConfig && hasAnyAudioToMux) {
           audioEncoder = new AudioEncoder({
             output: (chunk, meta) => {
               try { muxer.addAudioChunk(chunk, meta); } catch (e) {}
@@ -3375,9 +3795,12 @@
               if (btn) btn.textContent = '⏳ 正在合成音轨并封装 MP4...';
               const actualRecordedSec = Math.max(0.5, encodedFrames / TARGET_FPS);
 
-              if (audioEncoder && activeAudioTracksToMix.length > 0) {
+              if (audioEncoder && (activeAudioTracksToMix.length > 0 || (includeHangupTone && exportHangupAtSec !== null))) {
                 try {
                   const totalSamples = Math.floor(actualRecordedSec * SAMPLE_RATE);
+                  const hangupSampleIdx = exportHangupAtSec !== null
+                    ? Math.floor(exportHangupAtSec * SAMPLE_RATE)
+                    : totalSamples + SAMPLE_RATE;
                   const chunkFrames = 1024;
                   for (let offset = 0; offset < totalSamples; offset += chunkFrames) {
                     const curFrames = Math.min(chunkFrames, totalSamples - offset);
@@ -3393,10 +3816,34 @@
                         const srcData = ab.getChannelData(Math.min(ch, ab.numberOfChannels - 1));
                         const dstOffset = ch * curFrames;
                         for (let i = 0; i < curFrames; i++) {
-                          const srcIdx = (startSampleInTrack + Math.floor((offset + i) * ratio)) % ab.length;
+                          const globalSample = offset + i;
+                          if (globalSample >= hangupSampleIdx) continue;
+                          const srcIdx = (startSampleInTrack + Math.floor(globalSample * ratio)) % ab.length;
                           const sample = srcData[srcIdx] * track.gain;
                           const combined = planarBuf[dstOffset + i] + sample;
                           planarBuf[dstOffset + i] = Math.max(-1, Math.min(1, combined));
+                        }
+                      }
+                    }
+
+                    if (includeHangupTone && exportHangupAtSec !== null && exportHangupAtSec > 0.05) {
+                      for (let i = 0; i < curFrames; i++) {
+                        const globalSample = offset + i;
+                        const dtAfterHangup = (globalSample - hangupSampleIdx) / SAMPLE_RATE;
+                        let toneVal = 0;
+                        if (dtAfterHangup >= 0 && dtAfterHangup <= 0.15) {
+                          const env = Math.min(1, dtAfterHangup / 0.012) * Math.min(1, (0.15 - dtAfterHangup) / 0.02);
+                          toneVal = (Math.sin(2 * Math.PI * 480 * dtAfterHangup) + Math.sin(2 * Math.PI * 620 * dtAfterHangup)) * 0.14 * env;
+                        } else if (dtAfterHangup >= 0.24 && dtAfterHangup <= 0.46) {
+                          const t2 = dtAfterHangup - 0.24;
+                          const env = Math.min(1, t2 / 0.012) * Math.min(1, (0.22 - t2) / 0.025);
+                          toneVal = (Math.sin(2 * Math.PI * 440 * t2) + Math.sin(2 * Math.PI * 580 * t2)) * 0.14 * env;
+                        }
+                        if (toneVal !== 0) {
+                          for (let ch = 0; ch < NUM_CHANNELS; ch++) {
+                            const dstOffset = ch * curFrames;
+                            planarBuf[dstOffset + i] = Math.max(-1, Math.min(1, planarBuf[dstOffset + i] + toneVal));
+                          }
                         }
                       }
                     }
@@ -3454,6 +3901,8 @@
 
           intervalId = setInterval(() => {
             if (finishing) return;
+            const curElapsed = encodedFrames / TARGET_FPS;
+            checkAutoHangupAtElapsed(curElapsed);
             renderAppStageToCanvas(ctx, outW, outH, hideTopIcons);
 
             try {
@@ -3574,6 +4023,7 @@
 
       timerId = setInterval(() => {
         const elapsed = (performance.now() - recStart) / 1000;
+        checkAutoHangupAtElapsed(elapsed);
         if (elapsed >= recordSeconds) {
           finishFallbackRec();
           return;
